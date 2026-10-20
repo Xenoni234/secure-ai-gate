@@ -1,0 +1,30 @@
+services:
+  app:
+    image: secure-ai-gate:${IMAGE_TAG:-latest}
+    container_name: secure-ai-app
+    environment:
+      API_KEY: ${API_KEY:?API_KEY must be set}
+      RATE_LIMIT: "60"
+    ports:
+      - "5000:5000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks: [ci-net]
+
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium
+    shm_size: 2gb
+    ports:
+      - "4444:4444"   # Selenium Grid
+      - "7900:7900"   # live browser view (noVNC, password: secret)
+    networks: [ci-net]
+
+networks:
+  ci-net:
+    external: true

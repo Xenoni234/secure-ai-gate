@@ -1,0 +1,7 @@
+.venv
+.git
+reports
+jenkins
+tests
+app/artifacts
+**/__pycache__

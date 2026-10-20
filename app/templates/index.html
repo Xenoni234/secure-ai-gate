@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure AI Gate</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #1f2937; }
+    h1 { margin-bottom: 4px; }
+    .muted { color: #6b7280; font-size: 14px; }
+    label { display: block; font-weight: 600; margin: 16px 0 6px; }
+    input, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; box-sizing: border-box; }
+    .row { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+    button { background: #111827; color: #fff; border: 0; padding: 10px 20px; border-radius: 8px; cursor: pointer; font: inherit; }
+    a { color: #2563eb; }
+    .card { margin-top: 24px; padding: 16px; border-radius: 10px; }
+    .ok { background: #ecfdf5; border: 1px solid #10b981; }
+    .err { background: #fef2f2; border: 1px solid #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>Secure AI Gate</h1>
+  <p class="muted">Breast-cancer classifier (model {{ meta.version }}) protected by input validation,
+     rate limiting and security headers. Demo only, not medical advice.</p>
+
+  <form method="post" action="/predict-ui" id="predict-form">
+    <label for="patient_ref">Reference ID</label>
+    <input id="patient_ref" name="patient_ref" maxlength="50" value="{{ patient_ref }}" placeholder="e.g. PT-001">
+
+    <label for="features">{{ meta.n_features }} features (comma-separated)</label>
+    <textarea id="features" name="features" rows="6">{{ features }}</textarea>
+
+    <div class="row">
+      <button type="submit" id="predict-btn">Predict</button>
+      <a id="load-sample" href="/?sample=1">Load sample</a>
+    </div>
+  </form>
+
+  {% if result %}
+  <div id="result" class="card ok">
+    <h2>Prediction: {{ result.label | capitalize }}</h2>
+    <p>Confidence: {{ result.confidence }}</p>
+    <p>Reference: <span id="echo-ref">{{ patient_ref }}</span></p>
+    <p class="muted">Model {{ result.model_version }}</p>
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div id="error" class="card err">{{ error }}</div>
+  {% endif %}
+</body>
+</html>
