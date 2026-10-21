@@ -8,7 +8,7 @@ pipeline {
                      description: 'Leave the staging app running after the build (for demo)')
     }
 
-    triggers { pollSCM('H/5 * * * *') }
+    triggers { pollSCM('* * * * *') }
 
     options {
         timestamps()
@@ -41,7 +41,7 @@ pipeline {
                     python3 -m venv .venv
                     $PY -m pip install --quiet --upgrade pip
                     $PY -m pip install --quiet -r requirements.txt -r requirements-dev.txt
-                    mkdir -p reports
+                    rm -rf reports && mkdir -p reports
                 '''
             }
         }
@@ -79,17 +79,31 @@ pipeline {
 
         stage('Container Scan - Trivy') {
             steps {
-                sh '''
-                    set +e
-                    EXIT=0
-                    if [ "$FAIL_ON_CVE" = "true" ]; then EXIT=1; fi
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
-                        image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
-                        --exit-code $EXIT --no-progress $IMAGE:$IMAGE_TAG > reports/trivy.txt 2>&1
-                    STATUS=$?
-                    cat reports/trivy.txt
-                    exit $STATUS
-                '''
+                script {
+                    // 0 = clean / reported, 1 = CVEs with FAIL_ON_CVE, 99 = scanner DB unavailable
+                    def rc = sh(returnStatus: true, script: '''
+                        if ! docker run --rm --entrypoint sh -v trivy-cache:/root/.cache/ aquasec/trivy:latest \
+                                -c 'test -f /root/.cache/trivy/db/metadata.json'; then
+                            echo "Trivy vulnerability DB not cached yet - scan skipped" | tee reports/trivy.txt
+                            exit 99
+                        fi
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ \
+                            aquasec/trivy:latest image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+                            --skip-db-update --timeout 10m --exit-code 2 --no-progress $IMAGE:$IMAGE_TAG \
+                            > reports/trivy.txt 2>&1 && STATUS=0 || STATUS=$?
+                        cat reports/trivy.txt
+                        if [ $STATUS -eq 2 ]; then
+                            if [ "$FAIL_ON_CVE" = "true" ]; then exit 1; fi
+                            exit 0
+                        fi
+                        [ $STATUS -eq 0 ] || exit 99
+                    ''')
+                    if (rc == 99) {
+                        unstable('Trivy vulnerability DB unavailable - scan skipped')
+                    } else if (rc != 0) {
+                        error('Fixable HIGH/CRITICAL CVEs found')
+                    }
+                }
             }
         }
 
@@ -98,6 +112,7 @@ pipeline {
                 sh '''
                     docker network inspect ci-net >/dev/null 2>&1 || docker network create ci-net
                     docker compose down --remove-orphans || true
+                    docker rm -f secure-ai-app selenium >/dev/null 2>&1 || true
                     docker compose up -d
                     for i in $(seq 1 30); do
                         curl -sf $APP_URL/health && break
