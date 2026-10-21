@@ -96,18 +96,22 @@ docker images $IMAGE
       <configuredLocalRules/>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
-      <command>echo "==================== 7. Container scan - Trivy ===================="
+      <command>echo "==================== 7. Container scan - Trivy (UNSTABLE if scanner unavailable) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
 export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
-EXIT=0
-if [ "$FAIL_ON_CVE" = "true" ]; then EXIT=1; fi
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
-    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
-    --exit-code $EXIT --no-progress $IMAGE:$IMAGE_TAG &gt; reports/trivy.txt 2&gt;&amp;1 &amp;&amp; STATUS=0 || STATUS=$?
+# exit code 2 = HIGH/CRITICAL CVEs found; any other non-zero = scanner/network problem
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ aquasec/trivy:latest \
+    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --timeout 15m \
+    --exit-code 2 --no-progress $IMAGE:$IMAGE_TAG &gt; reports/trivy.txt 2&gt;&amp;1 &amp;&amp; STATUS=0 || STATUS=$?
 cat reports/trivy.txt
-exit $STATUS
+if [ $STATUS -eq 2 ]; then
+    if [ "$FAIL_ON_CVE" = "true" ]; then echo "Fixable HIGH/CRITICAL CVEs found"; exit 1; fi
+    echo "CVEs found (reported, FAIL_ON_CVE=false)"; exit 0
+fi
+[ $STATUS -eq 0 ] || exit 99
 </command>
       <configuredLocalRules/>
+      <unstableReturn>99</unstableReturn>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>echo "==================== 8. Deploy to staging (docker compose) ===================="
