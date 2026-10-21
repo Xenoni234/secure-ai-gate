@@ -58,8 +58,8 @@ Features come from `app/chess_features.py`, the same code that builds the datase
 
 | Threat | Example | Controls | Tested by |
 |---|---|---|---|
-| **Evasion (smart cheater)** | uses the engine on only 30–70 % of moves | trained on smart cheaters; recall gate ≥ 0.85; detection-vs-cheat-ratio curve | `test_model.py`, `test_adversarial.py` |
-| **False accusation** | strong honest player flagged | threshold picked for ≤ 5 % false-accusation rate (cross-validation); gate ≤ 0.10; disclaimer in UI | `test_false_accusation_gate` |
+| **Evasion (smart cheater)** | uses the engine on only 30–70 % of moves | trained on smart cheaters; gate: ≥ 90 % of full-engine cheaters caught; smart-cheater detection reported per cheat ratio (known weakness) | `test_model.py`, `test_adversarial.py` |
+| **False accusation** | strong honest player flagged | threshold picked for ≤ 8 % false-accusation rate (cross-validation); gate ≤ 0.10; disclaimer in UI | `test_false_accusation_gate` |
 | **DoS via expensive analysis** | flood of 300-ply games | per-key/IP rate limits (10/min for analysis); max 2 concurrent engines → 503; depth 8 + 1 s/position + 25 s/game caps; 20 KB PGN; 32 KB body | `test_analyze_rate_limiting`, `test_analysis_slots_exhausted_returns_503` |
 | **Malicious / malformed PGN** | illegal moves, two games, variants, null moves, huge comments | python-chess strict parse, exactly one standard game, 20–300 plies, fixed error messages (input never echoed), parser errors → 400, PGN parser logs silenced | PGN tests in `test_api_security.py` |
 | **XSS via PGN headers** | `[White "<script>alert(1)</script>"]` | Jinja autoescape, CSP without inline scripts | API + Selenium XSS tests |

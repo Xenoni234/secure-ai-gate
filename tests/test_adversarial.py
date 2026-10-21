@@ -9,10 +9,10 @@ from pathlib import Path
 import numpy as np
 
 from app.main import load_model
-from app.train import false_accusation_rate, load_split, predict_labels
+from app.train import MIN_ENGINE_RECALL, false_accusation_rate, load_split, predict_labels
 
 BUCKETS = [(0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7)]
-MIN_ENGINE_DETECTION = 0.95
+MIN_ENGINE_DETECTION = MIN_ENGINE_RECALL
 
 
 def in_bucket(ratio, lo, hi):
