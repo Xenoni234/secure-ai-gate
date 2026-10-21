@@ -1,0 +1,11 @@
+[Event "Fair-play demo (fair)"]
+[Site "Secure AI Gate (simulation)"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Academy Student A"]
+[Black "Academy Student B"]
+[Result "1-0"]
+[Opening "Caro-Kann"]
+[FairPlaySubject "black"]
+
+1. e4 c6 2. d4 d5 3. Nc3 dxe4 4. Nxe4 Bf5 5. Qe2 h5 6. Ng3 Bh7 7. Qxh5 Nf6 8. Qc5 Nbd7 9. N3e2 Nxc5 10. f3 a6 11. Be3 Ne6 12. O-O-O g6 13. a3 a5 14. d5 Nxd5 15. h3 Qc8 16. Rxd5 f6 17. Rd1 b5 18. Bd2 Ng5 19. Nc3 b4 20. f4 bxa3 21. Bc4 Bg8 22. b3 Bxc4 23. Kb1 Nh7 24. f5 Bf7 25. fxg6 c5 26. gxf7+ Kd7 27. Nd5 Qb7 28. Bc3 Qa6 29. Nb4+ Ke6 30. Rd5 Qc8 31. Nd3 Rg8 32. fxg8=B# 1-0

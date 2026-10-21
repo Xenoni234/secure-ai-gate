@@ -1,0 +1,11 @@
+[Event "Fair-play demo (suspicious)"]
+[Site "Secure AI Gate (simulation)"]
+[Date "????.??.??"]
+[Round "?"]
+[White "Academy Student A"]
+[Black "Academy Student B"]
+[Result "0-1"]
+[Opening "Queen's Gambit Accepted"]
+[FairPlaySubject "black"]
+
+1. d4 d5 2. c4 dxc4 3. Nf3 Nf6 4. e3 e6 5. g4 Nxg4 6. Nbd2 Nc6 7. Nxc4 e5 8. Nfxe5 Ngxe5 9. dxe5 Qh4 10. a3 Be6 11. Qd5 Bxd5 12. e4 Qxe4+ 13. Kd1 Qxh1 14. Nd6+ Bxd6 15. Be3 Qxf1+ 16. Kd2 Qxa1 17. Kd3 Qd1+ 18. Bd2 Nxe5+ 19. Ke3 Nc4+ 20. Kd3 Qxd2# 0-1

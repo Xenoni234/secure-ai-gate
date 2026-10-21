@@ -3,5 +3,9 @@
 reports
 jenkins
 tests
+scripts
 app/artifacts
 **/__pycache__
+# data/fairplay.csv must stay in the build context (the builder stage trains from it);
+# only the generator's resume cache is excluded.
+data/*.partial.csv

@@ -1,4 +1,9 @@
-"""Train the classifier, save it with a SHA-256 fingerprint, and enforce a quality gate."""
+"""Train the fair-play classifier, save it with a SHA-256 fingerprint, and enforce quality gates.
+
+Features were pre-computed by scripts/generate_dataset.py, so no chess engine is needed here
+and CI training takes seconds.
+"""
+import csv
 import hashlib
 import json
 import sys
@@ -6,39 +11,88 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
-from sklearn.datasets import load_breast_cancer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score, recall_score
+from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from app.chess_features import FEATURE_NAMES
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA_PATH = ROOT / "data" / "fairplay.csv"
 ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts"
 MODEL_PATH = ARTIFACT_DIR / "model.joblib"
 META_PATH = ARTIFACT_DIR / "model_meta.json"
 RANDOM_STATE = 42
-MIN_ACCURACY = 0.93
+CLASS_NAMES = ["fair", "assisted"]
+
+MIN_RECALL = 0.85                     # share of assisted games we must catch
+MAX_FALSE_ACCUSATION_RATE = 0.10      # share of fair players we may wrongly flag
+TARGET_FALSE_ACCUSATION_RATE = 0.05   # stricter target used to pick the threshold (safety margin)
+
+
+def load_dataset(path=DATA_PATH):
+    if not Path(path).exists():
+        sys.exit(f"{path} not found - run scripts/generate_dataset.py first")
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    X = np.array([[float(r[name]) for name in FEATURE_NAMES] for r in rows])
+    y = np.array([int(r["label"]) for r in rows])
+    cheat_ratio = np.array([float(r["cheat_ratio"]) for r in rows])
+    return X, y, cheat_ratio
 
 
 def load_split():
-    data = load_breast_cancer()
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        data.data, data.target, test_size=0.2, stratify=data.target, random_state=RANDOM_STATE
-    )
-    return data, X_tr, X_te, y_tr, y_te
+    """Stratified 80/20 split: X_tr, X_te, y_tr, y_te, ratio_tr, ratio_te."""
+    X, y, cheat_ratio = load_dataset()
+    return train_test_split(X, y, cheat_ratio, test_size=0.2, stratify=y,
+                            random_state=RANDOM_STATE)
+
+
+def build_model():
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", RandomForestClassifier(n_estimators=300, min_samples_leaf=2,
+                                       class_weight="balanced", random_state=RANDOM_STATE,
+                                       n_jobs=1)),
+    ])
+
+
+def predict_labels(model, X, threshold):
+    """1 = assisted when P(assisted) >= threshold."""
+    return (model.predict_proba(X)[:, 1] >= threshold).astype(int)
+
+
+def false_accusation_rate(y_true, y_pred):
+    fair = y_true == 0
+    return float(np.mean(y_pred[fair] == 1)) if fair.any() else 0.0
+
+
+def choose_threshold(X_tr, y_tr):
+    """Lowest threshold whose out-of-fold false-accusation rate stays under the target.
+
+    A false accusation harms an innocent player, so the threshold is driven by that rate
+    first, and recall is maximised within it.
+    """
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    oof = cross_val_predict(build_model(), X_tr, y_tr, cv=cv, method="predict_proba")[:, 1]
+    fair_scores = oof[y_tr == 0]
+    for t in np.arange(0.20, 0.96, 0.01):
+        t = round(float(t), 2)
+        if np.mean(fair_scores >= t) <= TARGET_FALSE_ACCUSATION_RATE:
+            return t
+    return 0.95
 
 
 def main():
-    data, X_tr, X_te, y_tr, y_te = load_split()
-
-    model = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(C=0.5, max_iter=5000, random_state=RANDOM_STATE)),
-    ])
-    model.fit(X_tr, y_tr)
-    pred = model.predict(X_te)
-    acc = accuracy_score(y_te, pred)
-    f1 = f1_score(y_te, pred)
+    X_tr, X_te, y_tr, y_te, _, _ = load_split()
+    threshold = choose_threshold(X_tr, y_tr)
+    model = build_model().fit(X_tr, y_tr)
+    pred = predict_labels(model, X_te, threshold)
+    recall = recall_score(y_te, pred, pos_label=1)
+    far = false_accusation_rate(y_te, pred)
 
     ARTIFACT_DIR.mkdir(exist_ok=True)
     joblib.dump(model, MODEL_PATH)
@@ -48,22 +102,34 @@ def main():
         "version": digest[:12],
         "sha256": digest,
         "trained_at": datetime.now(timezone.utc).isoformat(),
-        "accuracy": round(acc, 4),
-        "f1": round(f1, 4),
-        "n_features": int(X_tr.shape[1]),
-        "feature_names": [str(n) for n in data.feature_names],
+        "metrics": {
+            "recall_assisted": round(float(recall), 4),
+            "false_accusation_rate": round(far, 4),
+            "accuracy": round(float(accuracy_score(y_te, pred)), 4),
+            "f1": round(float(f1_score(y_te, pred)), 4),
+            "n_train": int(len(y_tr)),
+            "n_test": int(len(y_te)),
+        },
+        "threshold": threshold,
+        "n_features": len(FEATURE_NAMES),
+        "feature_names": list(FEATURE_NAMES),
         "feature_min": X_tr.min(axis=0).tolist(),
         "feature_max": X_tr.max(axis=0).tolist(),
-        "class_names": [str(n) for n in data.target_names],
-        "sample": [float(v) for v in X_te[0]],
+        "class_names": CLASS_NAMES,
     }
     META_PATH.write_text(json.dumps(meta, indent=2))
 
-    print(f"Model {meta['version']}  accuracy={acc:.4f}  f1={f1:.4f}")
-    if acc < MIN_ACCURACY:
-        print(f"QUALITY GATE FAILED: accuracy {acc:.4f} < {MIN_ACCURACY}")
+    print(f"Model {meta['version']}  threshold={threshold:.2f}  "
+          f"recall(assisted)={recall:.4f}  false-accusation rate={far:.4f}")
+    failed = []
+    if recall < MIN_RECALL:
+        failed.append(f"recall {recall:.4f} < {MIN_RECALL}")
+    if far > MAX_FALSE_ACCUSATION_RATE:
+        failed.append(f"false-accusation rate {far:.4f} > {MAX_FALSE_ACCUSATION_RATE}")
+    if failed:
+        print("QUALITY GATE FAILED: " + "; ".join(failed))
         sys.exit(1)
-    print("Quality gate passed")
+    print("Quality gates passed")
 
 
 if __name__ == "__main__":

@@ -3,45 +3,140 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Secure AI Gate</title>
+  <title>Secure AI Gate · Chess Fair-Play</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #1f2937; }
-    h1 { margin-bottom: 4px; }
+    body { font-family: system-ui, sans-serif; max-width: 820px; margin: 32px auto; padding: 0 16px; color: #1f2937; }
+    .brand { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #92400e; }
+    h1 { margin: 4px 0 8px; }
+    h2 { margin: 0 0 8px; }
     .muted { color: #6b7280; font-size: 14px; }
-    label { display: block; font-weight: 600; margin: 16px 0 6px; }
-    input, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; box-sizing: border-box; }
-    .row { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+    .notice { display: inline-block; margin: 4px 0 0; padding: 6px 10px; border-radius: 6px; background: #fffbeb; border: 1px solid #f59e0b; font-size: 14px; }
+    label.block, legend { display: block; font-weight: 600; margin: 16px 0 6px; padding: 0; }
+    textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font: 13px/1.4 ui-monospace, Menlo, monospace; box-sizing: border-box; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    fieldset label { display: inline-flex; gap: 6px; align-items: center; margin-right: 18px; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 16px; }
     button { background: #111827; color: #fff; border: 0; padding: 10px 20px; border-radius: 8px; cursor: pointer; font: inherit; }
-    a { color: #2563eb; }
-    .card { margin-top: 24px; padding: 16px; border-radius: 10px; }
+    a { color: #1d4ed8; }
+    .card { margin-top: 20px; padding: 16px; border-radius: 10px; }
+    .info { background: #f9fafb; border: 1px solid #e5e7eb; }
     .ok { background: #ecfdf5; border: 1px solid #10b981; }
+    .warn { background: #fff7ed; border: 1px solid #f97316; }
     .err { background: #fef2f2; border: 1px solid #ef4444; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 8px; }
+    td { padding: 4px 8px; border-top: 1px solid #e5e7eb; }
+    .section { margin-top: 28px; }
+    input, select { padding: 9px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
+    .players { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .player h3 { margin: 0; }
+    .big { font-size: 28px; font-weight: 700; margin: 6px 0; }
+    th { text-align: left; padding: 4px 8px; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
-  <h1>Secure AI Gate</h1>
-  <p class="muted">Breast-cancer classifier (model {{ meta.version }}) protected by input validation,
-     rate limiting and security headers. Demo only, not medical advice.</p>
+  <p class="brand">Secure AI Gate</p>
+  <h1>Chess Fair-Play Gate</h1>
+  <p class="muted">AI-assisted fair-play screening for Lichess games, behind API-key auth, rate limits,
+     strict input validation and security headers.</p>
+  <p class="notice">Decision support for arbiters, not an automatic ban.</p>
 
-  <form method="post" action="/predict-ui" id="predict-form">
-    <label for="patient_ref">Reference ID</label>
-    <input id="patient_ref" name="patient_ref" maxlength="50" value="{{ patient_ref }}" placeholder="e.g. PT-001">
-
-    <label for="features">{{ meta.n_features }} features (comma-separated)</label>
-    <textarea id="features" name="features" rows="6">{{ features }}</textarea>
-
+  <h2 class="section">Lichess head-to-head check</h2>
+  <p class="muted">Enter two Lichess usernames. All their recent standard games against each other are
+     fetched from lichess.org and every move of both players is checked with Stockfish.</p>
+  <form method="post" action="/head-to-head-ui" id="h2h-form">
     <div class="row">
-      <button type="submit" id="predict-btn">Predict</button>
-      <a id="load-sample" href="/?sample=1">Load sample</a>
+      <input id="player1" name="player1" placeholder="Player 1 (Lichess username)" value="{{ p1 }}" maxlength="30" required>
+      <input id="player2" name="player2" placeholder="Player 2 (Lichess username)" value="{{ p2 }}" maxlength="30" required>
+      <select id="max_games" name="max_games">
+        {% for n in [5, 10, 20] %}<option value="{{ n }}" {% if max_games|string == n|string %}selected{% endif %}>Last {{ n }} games</option>{% endfor %}
+      </select>
+      <button type="submit" id="h2h-btn">Check players</button>
     </div>
   </form>
 
+  {% if h2h_error %}<div id="h2h-error" class="card err">{{ h2h_error }}</div>{% endif %}
+
+  {% if h2h %}
+  <div id="h2h-result" class="card info">
+    <p class="muted">{{ h2h.games_found }} game(s) found between <strong>{{ h2h.player1 }}</strong> and
+       <strong>{{ h2h.player2 }}</strong>; {{ h2h.games_analysed }} analysed
+       {% if h2h.skipped %}({{ h2h.skipped }} too short / non-standard skipped){% endif %}
+       {% if h2h.timed_out %} · time budget reached, remaining games not analysed{% endif %}</p>
+    <div class="players">
+      {% for p in h2h.players %}
+      <div class="card {% if p.verdict.startswith('Suspicious') %}warn{% elif p.games_analysed %}ok{% else %}info{% endif %} player">
+        <h3>{{ p.name }}</h3>
+        <p class="big">{% if p.avg_accuracy is not none %}{{ p.avg_accuracy }}%{% else %}–{% endif %} <span class="muted">accuracy</span></p>
+        <p><strong>{{ p.verdict }}</strong>{% if p.fair_play_score is not none %} · fair-play score {{ p.fair_play_score }}/100{% endif %}</p>
+        <table>
+          <tr><td>Games analysed</td><td class="num">{{ p.games_analysed }}</td></tr>
+          <tr><td>Average centipawn loss</td><td class="num">{{ p.avg_acpl if p.avg_acpl is not none else "–" }}</td></tr>
+          <tr><td>Engine top-1 match</td><td class="num">{{ p.top1_match ~ "%" if p.top1_match is not none else "–" }}</td></tr>
+          <tr><td>Engine-like games</td><td class="num">{{ p.engine_like_games }}</td></tr>
+        </table>
+      </div>
+      {% endfor %}
+    </div>
+    {% if h2h.games %}
+    <table id="h2h-games">
+      <tr><th>Game</th><th>White</th><th>Black</th><th>Result</th><th>White acc.</th><th>Black acc.</th></tr>
+      {% for g in h2h.games %}
+      <tr>
+        <td><a href="{{ g.url }}" rel="noopener noreferrer" target="_blank">{{ g.id }}</a> <span class="muted">{{ g.speed }}</span></td>
+        <td>{{ g.white }}</td><td>{{ g.black }}</td><td>{{ g.winner }}</td>
+        {% for c in ["white", "black"] %}
+        <td class="num">{% if g.sides[c] %}{{ g.sides[c].accuracy }}%{% if g.sides[c].engine_like %} ⚠{% endif %}{% else %}–{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="muted">Accuracy uses the Lichess formula on Stockfish (depth 8) evaluations, after skipping each player's first 8 moves.
+       ⚠ = engine-like game (≥ 80 % best-move match and ≤ 15 average centipawn loss). Decision support only, not an automatic ban.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <h2 class="section">Check a single PGN</h2>
+  <form method="post" action="/analyze-ui" id="analyze-form">
+    <label class="block" for="pgn">Game (PGN)</label>
+    <textarea id="pgn" name="pgn" rows="12" spellcheck="false" placeholder='[White "..."] 1. e4 e5 2. Nf3 ...'>{{ pgn }}</textarea>
+
+    <fieldset>
+      <legend>Player to check</legend>
+      <label><input type="radio" id="side-white" name="side" value="white" {% if side != "black" %}checked{% endif %}> White</label>
+      <label><input type="radio" id="side-black" name="side" value="black" {% if side == "black" %}checked{% endif %}> Black</label>
+    </fieldset>
+
+    <div class="row">
+      <button type="submit" id="analyze-btn">Analyse game</button>
+      {% if "fair" in samples %}<a id="load-fair" href="/?sample=fair">Load fair sample</a>{% endif %}
+      {% if "suspicious" in samples %}<a id="load-suspicious" href="/?sample=suspicious">Load suspicious sample</a>{% endif %}
+    </div>
+  </form>
+
+  {% if players %}
+  <div id="game-info" class="card info">
+    <p><strong>White:</strong> <span id="player-white">{{ players.white }}</span>
+       &nbsp;·&nbsp; <strong>Black:</strong> <span id="player-black">{{ players.black }}</span></p>
+    <p class="muted">Event: <span id="event">{{ players.event }}</span> · Result {{ players.result }}
+       · Checked side: {{ side | capitalize }}</p>
+  </div>
+  {% endif %}
+
   {% if result %}
-  <div id="result" class="card ok">
-    <h2>Prediction: {{ result.label | capitalize }}</h2>
-    <p>Confidence: {{ result.confidence }}</p>
-    <p>Reference: <span id="echo-ref">{{ patient_ref }}</span></p>
-    <p class="muted">Model {{ result.model_version }}</p>
+  <div id="verdict" class="card {% if result.label == 'assisted' %}warn{% else %}ok{% endif %}">
+    <h2>{{ result.verdict }}</h2>
+    <p>Confidence: {{ "%.2f" | format(result.confidence) }}</p>
+    {% if unusual %}
+    <p class="muted">Unusual values for {{ unusual | join(", ") }}; treat this verdict with extra caution.</p>
+    {% endif %}
+    <table id="feature-table">
+      {% for name in meta.feature_names %}
+      <tr><td>{{ feature_labels[name] }}</td><td class="num">{{ features[name] }}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="muted">Model {{ result.model_version }}. Decision support for arbiters, not an automatic ban.</p>
   </div>
   {% endif %}
 
