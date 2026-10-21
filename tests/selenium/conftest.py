@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from selenium.webdriver.chrome.options import Options
 APP_URL = os.environ.get("APP_URL", "http://localhost:5000")
 SELENIUM_URL = os.environ.get("SELENIUM_URL", "http://localhost:4444")
 SHOTS = Path("reports/screenshots")
+DEMO_PAUSE = float(os.environ.get("DEMO_PAUSE", "0"))   # seconds to hold each result on screen (live demo)
 
 
 @pytest.fixture(scope="session")
@@ -26,5 +28,7 @@ def driver():
 @pytest.fixture(autouse=True)
 def screenshot(request, driver):
     yield
+    if DEMO_PAUSE:
+        time.sleep(DEMO_PAUSE)
     SHOTS.mkdir(parents=True, exist_ok=True)
     driver.save_screenshot(str(SHOTS / f"{request.node.name}.png"))

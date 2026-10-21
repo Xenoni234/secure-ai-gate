@@ -24,6 +24,7 @@ pipeline {
         APP_URL      = 'http://secure-ai-app:5000'
         SELENIUM_URL = 'http://selenium:4444'
         HEADLESS     = 'false'                            // watch live at localhost:7900
+        DEMO_PAUSE   = '3'                                // hold each UI test result on screen
         PY           = '.venv/bin/python'
     }
 
