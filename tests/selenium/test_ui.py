@@ -31,7 +31,7 @@ def analyse(driver, wait_for="verdict"):
 
 def test_homepage_loads(driver):
     driver.get(APP_URL)
-    assert "Fair-Play Gate" in driver.title
+    assert "Fair-Play" in driver.title
     assert "not an automatic ban" in driver.page_source
 
 

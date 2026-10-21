@@ -1,0 +1,185 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <description>Secure AI Gate - Chess Fair-Play: DevSecOps pipeline as a Freestyle job. Each "Execute shell" step is one security/quality gate; any failure stops the build and the image is NOT promoted.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>-1</daysToKeep><numToKeep>15</numToKeep><artifactDaysToKeep>-1</artifactDaysToKeep><artifactNumToKeep>-1</artifactNumToKeep>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.BooleanParameterDefinition>
+          <name>FAIL_ON_CVE</name>
+          <description>Fail the build if Trivy finds fixable HIGH/CRITICAL CVEs</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig><url>https://github.com/Xenoni234/secure-ai-gate.git</url></hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches><hudson.plugins.git.BranchSpec><name>*/main</name></hudson.plugins.git.BranchSpec></branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers>
+    <hudson.triggers.SCMTrigger>
+      <spec>* * * * *</spec>
+      <ignorePostCommitHooks>false</ignorePostCommitHooks>
+    </hudson.triggers.SCMTrigger>
+  </triggers>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 1. Setup Python ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+python3 -m venv .venv
+$PY -m pip install --quiet --upgrade pip
+$PY -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+mkdir -p reports
+git log -1 --oneline
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 2. SAST - Bandit (fails on high-severity issues) ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+$PY -m bandit -r app -f json -o reports/bandit.json || true
+$PY -m bandit -r app -lll -iii
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 3. Dependency scan - pip-audit (UNSTABLE on known CVEs) ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+$PY -m pip_audit -r requirements.txt -f json -o reports/pip-audit.json || exit 99
+</command>
+      <configuredLocalRules/>
+      <unstableReturn>99</unstableReturn>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 4. Train AI model + Quality Gate ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+$PY -m app.train
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 5. Unit, API-security and adversarial tests ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+$PY -m pytest tests --ignore=tests/selenium -v --junitxml=reports/junit-unit.xml
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 6. Docker build ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+docker build -t $IMAGE:$IMAGE_TAG -t $IMAGE:latest .
+docker images $IMAGE
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 7. Container scan - Trivy ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+EXIT=0
+if [ "$FAIL_ON_CVE" = "true" ]; then EXIT=1; fi
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+    --exit-code $EXIT --no-progress $IMAGE:$IMAGE_TAG &gt; reports/trivy.txt 2&gt;&amp;1 &amp;&amp; STATUS=0 || STATUS=$?
+cat reports/trivy.txt
+exit $STATUS
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 8. Deploy to staging (docker compose) ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+docker network inspect ci-net &gt;/dev/null 2&gt;&amp;1 || docker network create ci-net
+docker compose down --remove-orphans || true
+docker compose up -d
+for i in $(seq 1 30); do curl -sf $APP_URL/health &amp;&amp; break; echo "waiting for app..."; sleep 2; done
+curl -sf $APP_URL/health
+for i in $(seq 1 30); do curl -sf $SELENIUM_URL/status | grep -Eq '"ready": ?true' &amp;&amp; break; echo "waiting for selenium..."; sleep 2; done
+docker ps --filter network=ci-net
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 9. UI tests - Selenium (watch live at http://localhost:7900) ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+$PY -m pytest tests/selenium -v --junitxml=reports/junit-ui.xml
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 10. DAST - OWASP ZAP (UNSTABLE on findings) ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+docker rm -f zap &gt;/dev/null 2&gt;&amp;1 || true
+docker run --name zap --network ci-net -u root zaproxy/zap-stable \
+    bash -c "mkdir -p /zap/wrk &amp;&amp; zap-baseline.py -t $APP_URL -r zap-report.html -I" &amp;&amp; STATUS=0 || STATUS=$?
+docker cp zap:/zap/wrk/zap-report.html reports/zap-report.html || true
+docker rm -f zap &gt;/dev/null 2&gt;&amp;1 || true
+[ $STATUS -eq 0 ] || exit 99
+</command>
+      <configuredLocalRules/>
+      <unstableReturn>99</unstableReturn>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>echo "==================== 11. Promote image to :stable ===================="
+export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
+export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+docker tag $IMAGE:$IMAGE_TAG $IMAGE:stable
+echo "Promoted $IMAGE:$IMAGE_TAG -&gt; stable. All security gates passed."
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.junit.JUnitResultArchiver plugin="junit">
+      <testResults>reports/junit-*.xml</testResults>
+      <keepLongStdio>false</keepLongStdio>
+      <allowEmptyResults>true</allowEmptyResults>
+    </hudson.tasks.junit.JUnitResultArchiver>
+    <hudson.tasks.ArtifactArchiver>
+      <artifacts>reports/**</artifacts>
+      <allowEmptyArchive>true</allowEmptyArchive>
+      <onlyIfSuccessful>false</onlyIfSuccessful>
+      <fingerprint>false</fingerprint>
+      <defaultExcludes>true</defaultExcludes>
+      <caseSensitive>true</caseSensitive>
+      <followSymlinks>false</followSymlinks>
+    </hudson.tasks.ArtifactArchiver>
+  </publishers>
+  <buildWrappers>
+    <org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper plugin="credentials-binding">
+      <bindings>
+        <org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+          <credentialsId>secure-ai-api-key</credentialsId>
+          <variable>API_KEY</variable>
+        </org.jenkinsci.plugins.credentialsbinding.impl.StringBinding>
+      </bindings>
+    </org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper>
+    <hudson.plugins.timestamper.TimestamperBuildWrapper plugin="timestamper"/>
+  </buildWrappers>
+</project>
