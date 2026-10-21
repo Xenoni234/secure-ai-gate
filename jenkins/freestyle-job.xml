@@ -47,7 +47,7 @@ export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADL
 python3 -m venv .venv
 $PY -m pip install --quiet --upgrade pip
 $PY -m pip install --quiet -r requirements.txt -r requirements-dev.txt
-mkdir -p reports
+rm -rf reports &amp;&amp; mkdir -p reports
 git log -1 --oneline
 </command>
       <configuredLocalRules/>
@@ -125,6 +125,7 @@ export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
 export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
 docker network inspect ci-net &gt;/dev/null 2&gt;&amp;1 || docker network create ci-net
 docker compose down --remove-orphans || true
+docker rm -f secure-ai-app selenium &gt;/dev/null 2&gt;&amp;1 || true
 docker compose up -d
 for i in $(seq 1 30); do curl -sf $APP_URL/health &amp;&amp; break; echo "waiting for app..."; sleep 2; done
 curl -sf $APP_URL/health
