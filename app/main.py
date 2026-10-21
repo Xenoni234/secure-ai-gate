@@ -10,7 +10,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, jsonify, redirect, render_template, request
 from werkzeug.exceptions import HTTPException
 
 from app.chess_features import (FEATURE_LABELS, EngineUnavailable, GameRejected, analyze_game,
@@ -173,6 +173,12 @@ def create_app(config=None):
             pgn_text, side = samples[name]
             return render_page(pgn=pgn_text, side=side)
         return render_page()
+
+    @app.get("/analyze-ui")
+    @app.get("/head-to-head-ui")
+    def form_pages_redirect():
+        # Reloading a result page sends a GET: go back to the form instead of a 405
+        return redirect("/", code=303)
 
     @app.post("/analyze-ui")
     def analyze_ui():
