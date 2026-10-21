@@ -3,5 +3,7 @@ reports/
 app/artifacts/
 __pycache__/
 *.pyc
+.claude/
+readm.md
 # Resume cache of scripts/generate_dataset.py (data/fairplay.csv and app/samples/ ARE committed)
 data/*.partial.csv
