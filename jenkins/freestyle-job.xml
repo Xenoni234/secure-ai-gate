@@ -99,9 +99,15 @@ docker images $IMAGE
       <command>echo "==================== 7. Container scan - Trivy (UNSTABLE if scanner unavailable) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
 export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
-# exit code 2 = HIGH/CRITICAL CVEs found; any other non-zero = scanner/network problem
+# Use the cached vulnerability DB (volume trivy-cache) so the scan runs offline in seconds
+if ! docker run --rm --entrypoint sh -v trivy-cache:/root/.cache/ aquasec/trivy:latest \
+        -c 'test -f /root/.cache/trivy/db/metadata.json'; then
+    echo "Trivy vulnerability DB not cached yet - scan skipped" | tee reports/trivy.txt
+    exit 99
+fi
+# exit code 2 = HIGH/CRITICAL CVEs found; any other non-zero = scanner problem
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ aquasec/trivy:latest \
-    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --timeout 15m \
+    image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --skip-db-update --timeout 10m \
     --exit-code 2 --no-progress $IMAGE:$IMAGE_TAG &gt; reports/trivy.txt 2&gt;&amp;1 &amp;&amp; STATUS=0 || STATUS=$?
 cat reports/trivy.txt
 if [ $STATUS -eq 2 ]; then
