@@ -25,9 +25,10 @@ with a confidence. The output is *decision support for arbiters, not an automati
    client ──► /api/v1/predict ─┘        │ security headers · generic JSON errors · Jinja autoescape│
                                         └──────────────────────────────────────────────────────────┘
 
- Jenkins: Checkout → venv → Bandit → pip-audit → Train + Quality Gate → pytest (unit/API/adversarial,
-          engine tests included) → Docker build → Trivy → Deploy staging (compose) → Selenium UI →
-          OWASP ZAP baseline → Promote :stable
+ Jenkins (Freestyle job, configured in the UI – no Groovy):
+          Checkout → venv → Bandit → pip-audit → Train + Quality Gate → pytest (unit/API/adversarial,
+          engine tests included) → Docker build → Trivy → Deploy staging (compose) → Selenium UI
+          (plain WebDriver, headless Chromium) → OWASP ZAP baseline → Promote :stable
 ```
 
 ### Features (per analysed player)
@@ -101,6 +102,34 @@ open http://localhost:5050
 
 Tests marked `engine` need Stockfish. They are skipped only when no binary is found. The lookup order is
 `STOCKFISH_PATH`, then `stockfish` on PATH, then `/usr/games/stockfish`.
+
+### Selenium UI tests (plain WebDriver, no Grid)
+The tests start a browser directly with `webdriver.Chrome()` on the machine that runs them:
+in Jenkins a headless Chromium installed in the Jenkins image (`CHROME_BIN`, `CHROMEDRIVER`),
+on a laptop your installed Google Chrome. To watch the browser test the deployed site:
+
+```bash
+HEADLESS=false DEMO_PAUSE=2 .venv/bin/python -m pytest tests/selenium -v
+```
+
+## Jenkins setup (UI only – Freestyle job, no Groovy)
+
+```bash
+docker compose -f jenkins/docker-compose.yml up -d --build    # Jenkins on http://localhost:8080
+```
+
+1. **Manage Jenkins → Credentials → (global) → Add Credentials**: kind *Secret text*, ID `secure-ai-api-key`.
+2. **New Item → Freestyle project** named `secure-ai-gate`.
+3. **General**: *Discard old builds* (keep 15); *This project is parameterized* → Boolean `FAIL_ON_CVE` (default off).
+4. **Source Code Management → Git**: `https://github.com/Xenoni234/secure-ai-gate.git`, branch `*/main`.
+5. **Build Triggers → Poll SCM**: `* * * * *` (checks GitHub every minute).
+6. **Build Environment**: *Use secret text(s) or file(s)* → variable `API_KEY`, credential `secure-ai-api-key`;
+   *Add timestamps to the Console Output*.
+7. **Build Steps**: eleven *Execute shell* steps, one per gate (setup, Bandit, pip-audit, train + quality gate,
+   pytest, Docker build, Trivy, deploy to staging, Selenium, OWASP ZAP, promote). The exact commands are in
+   [`jenkins/freestyle-job.xml`](jenkins/freestyle-job.xml); pip-audit, Trivy and ZAP use *Advanced → Exit code to set
+   build unstable* = `99`.
+8. **Post-build Actions**: *Publish JUnit test result report* (`reports/junit-*.xml`) and *Archive the artifacts* (`reports/**`).
 
 ## Limitations (honest)
 

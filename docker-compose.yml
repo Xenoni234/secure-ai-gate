@@ -16,15 +16,6 @@ services:
       - ALL
     networks: [ci-net]
 
-  selenium:
-    image: selenium/standalone-chromium:latest
-    container_name: selenium
-    shm_size: 2gb
-    ports:
-      - "4444:4444"
-      - "7900:7900"
-    networks: [ci-net]
-
 networks:
   ci-net:
     external: true

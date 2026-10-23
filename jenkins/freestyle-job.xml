@@ -1,6 +1,6 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
-  <description>Secure AI Gate - Chess Fair-Play: DevSecOps pipeline as a Freestyle job. Each "Execute shell" step is one security/quality gate; any failure stops the build and the image is NOT promoted.</description>
+  <description>Secure AI Gate - Chess Fair-Play: DevSecOps pipeline configured in the Jenkins UI (Freestyle job, no Groovy). Each "Execute shell" step is one security/quality gate; any failure stops the build and the image is NOT promoted.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <jenkins.model.BuildDiscarderProperty>
@@ -43,7 +43,7 @@
     <hudson.tasks.Shell>
       <command>echo "==================== 1. Setup Python ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 python3 -m venv .venv
 $PY -m pip install --quiet --upgrade pip
 $PY -m pip install --quiet -r requirements.txt -r requirements-dev.txt
@@ -55,7 +55,7 @@ git log -1 --oneline
     <hudson.tasks.Shell>
       <command>echo "==================== 2. SAST - Bandit (fails on high-severity issues) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 $PY -m bandit -r app -f json -o reports/bandit.json || true
 $PY -m bandit -r app -lll -iii
 </command>
@@ -64,7 +64,7 @@ $PY -m bandit -r app -lll -iii
     <hudson.tasks.Shell>
       <command>echo "==================== 3. Dependency scan - pip-audit (UNSTABLE on known CVEs) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 $PY -m pip_audit -r requirements.txt -f json -o reports/pip-audit.json || exit 99
 </command>
       <configuredLocalRules/>
@@ -73,7 +73,7 @@ $PY -m pip_audit -r requirements.txt -f json -o reports/pip-audit.json || exit 9
     <hudson.tasks.Shell>
       <command>echo "==================== 4. Train AI model + Quality Gate ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 $PY -m app.train
 </command>
       <configuredLocalRules/>
@@ -81,7 +81,7 @@ $PY -m app.train
     <hudson.tasks.Shell>
       <command>echo "==================== 5. Unit, API-security and adversarial tests ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 $PY -m pytest tests --ignore=tests/selenium -v --junitxml=reports/junit-unit.xml
 </command>
       <configuredLocalRules/>
@@ -89,7 +89,7 @@ $PY -m pytest tests --ignore=tests/selenium -v --junitxml=reports/junit-unit.xml
     <hudson.tasks.Shell>
       <command>echo "==================== 6. Docker build ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 docker build -t $IMAGE:$IMAGE_TAG -t $IMAGE:latest .
 docker images $IMAGE
 </command>
@@ -98,7 +98,7 @@ docker images $IMAGE
     <hudson.tasks.Shell>
       <command>echo "==================== 7. Container scan - Trivy (UNSTABLE if scanner unavailable) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 # Use the cached vulnerability DB (volume trivy-cache) so the scan runs offline in seconds
 if ! docker run --rm --entrypoint sh -v trivy-cache:/root/.cache/ aquasec/trivy:latest \
         -c 'test -f /root/.cache/trivy/db/metadata.json'; then
@@ -122,32 +122,31 @@ fi
     <hudson.tasks.Shell>
       <command>echo "==================== 8. Deploy to staging (docker compose) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 docker network inspect ci-net &gt;/dev/null 2&gt;&amp;1 || docker network create ci-net
 docker compose down --remove-orphans || true
 docker rm -f secure-ai-app selenium &gt;/dev/null 2&gt;&amp;1 || true
 docker compose up -d
 for i in $(seq 1 30); do curl -sf $APP_URL/health &amp;&amp; break; echo "waiting for app..."; sleep 2; done
 curl -sf $APP_URL/health
-for i in $(seq 1 30); do curl -sf $SELENIUM_URL/status | grep -Eq '"ready": ?true' &amp;&amp; break; echo "waiting for selenium..."; sleep 2; done
 docker ps --filter network=ci-net
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
-      <command>echo "==================== 9. UI tests - Selenium (watch live at http://localhost:7900) ===================="
+      <command>echo "==================== 9. UI tests - Selenium (plain WebDriver, headless Chromium) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 $PY -m pytest tests/selenium -v --junitxml=reports/junit-ui.xml
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
-      <command>echo "==================== 10. DAST - OWASP ZAP (UNSTABLE on findings) ===================="
+      <command>echo "==================== 10. DAST - OWASP ZAP (UNSTABLE on findings or after 5 min) ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 docker rm -f zap &gt;/dev/null 2&gt;&amp;1 || true
-docker run --name zap --network ci-net -u root zaproxy/zap-stable \
+timeout 300 docker run --name zap --network ci-net -u root zaproxy/zap-stable \
     bash -c "mkdir -p /zap/wrk &amp;&amp; zap-baseline.py -t $APP_URL -r zap-report.html -I" &amp;&amp; STATUS=0 || STATUS=$?
 docker cp zap:/zap/wrk/zap-report.html reports/zap-report.html || true
 docker rm -f zap &gt;/dev/null 2&gt;&amp;1 || true
@@ -159,7 +158,7 @@ docker rm -f zap &gt;/dev/null 2&gt;&amp;1 || true
     <hudson.tasks.Shell>
       <command>echo "==================== 11. Promote image to :stable ===================="
 export IMAGE=secure-ai-gate IMAGE_TAG=$BUILD_NUMBER PY=.venv/bin/python
-export APP_URL=http://secure-ai-app:5000 SELENIUM_URL=http://selenium:4444 HEADLESS=false
+export APP_URL=http://secure-ai-app:5000 HEADLESS=true
 docker tag $IMAGE:$IMAGE_TAG $IMAGE:stable
 echo "Promoted $IMAGE:$IMAGE_TAG -&gt; stable. All security gates passed."
 </command>
