@@ -135,6 +135,7 @@ pipeline {
         }
 
         stage('DAST - OWASP ZAP') {
+            options { timeout(time: 5, unit: 'MINUTES') }   // a hung scanner must not block the pipeline
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     sh '''
