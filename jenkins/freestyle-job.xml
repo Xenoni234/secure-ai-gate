@@ -1,6 +1,6 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
-  <description>Secure AI Gate - Chess Fair-Play: DevSecOps pipeline configured in the Jenkins UI (Freestyle job, no Groovy). Each "Execute shell" step is one security/quality gate; any failure stops the build and the image is NOT promoted.</description>
+  <description>Secure AI Gate - Chess Fair-Play: DevSecOps pipeline configured in the Jenkins UI (Freestyle job, no Groovy). Each "Execute shell" step is one security/quality gate; any failure stops the build and the image is NOT promoted. After every build an email report (pushed commits + test results) goes to the committer.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <jenkins.model.BuildDiscarderProperty>
@@ -180,6 +180,64 @@ echo "Promoted $IMAGE:$IMAGE_TAG -&gt; stable. All security gates passed."
       <caseSensitive>true</caseSensitive>
       <followSymlinks>false</followSymlinks>
     </hudson.tasks.ArtifactArchiver>
+    <hudson.plugins.emailext.ExtendedEmailPublisher plugin="email-ext">
+      <recipientList></recipientList>
+      <configuredTriggers>
+        <hudson.plugins.emailext.plugins.trigger.AlwaysTrigger>
+          <email>
+            <subject>$PROJECT_DEFAULT_SUBJECT</subject>
+            <body>$PROJECT_DEFAULT_CONTENT</body>
+            <recipientProviders>
+              <hudson.plugins.emailext.plugins.recipients.DevelopersRecipientProvider/>
+              <hudson.plugins.emailext.plugins.recipients.CulpritsRecipientProvider/>
+              <hudson.plugins.emailext.plugins.recipients.RequesterRecipientProvider/>
+            </recipientProviders>
+            <attachmentsPattern></attachmentsPattern>
+            <attachBuildLog>false</attachBuildLog>
+            <compressBuildLog>false</compressBuildLog>
+            <replyTo>$PROJECT_DEFAULT_REPLYTO</replyTo>
+            <contentType>project</contentType>
+          </email>
+        </hudson.plugins.emailext.plugins.trigger.AlwaysTrigger>
+      </configuredTriggers>
+      <contentType>text/html</contentType>
+      <defaultSubject>[Secure AI Gate] Build #$BUILD_NUMBER: $BUILD_STATUS - tests passed ${TEST_COUNTS,var="pass"}/${TEST_COUNTS,var="total"}</defaultSubject>
+      <defaultContent>&lt;div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937"&gt;
+&lt;h2 style="margin:0 0 4px"&gt;Secure AI Gate - Jenkins build #$BUILD_NUMBER: $BUILD_STATUS&lt;/h2&gt;
+&lt;p style="margin:0 0 12px;color:#6b7280"&gt;Automatic report for the code pushed to &lt;b&gt;Xenoni234/secure-ai-gate&lt;/b&gt; (branch main).&lt;/p&gt;
+
+&lt;h3 style="margin:16px 0 4px"&gt;What was pushed&lt;/h3&gt;
+&lt;ul style="margin:0"&gt;${CHANGES, showPaths=true, format="&lt;li&gt;&lt;b&gt;%m&lt;/b&gt;&lt;br&gt;by %a on %d - commit %r", pathFormat="&lt;br&gt;&amp;nbsp;&amp;nbsp;changed: %p"}&lt;/ul&gt;
+
+&lt;h3 style="margin:16px 0 4px"&gt;Test results&lt;/h3&gt;
+&lt;table cellpadding="6" style="border-collapse:collapse;border:1px solid #d1d5db"&gt;
+&lt;tr style="background:#f3f4f6"&gt;&lt;td&gt;&lt;b&gt;Total&lt;/b&gt;&lt;/td&gt;&lt;td&gt;&lt;b&gt;Passed&lt;/b&gt;&lt;/td&gt;&lt;td&gt;&lt;b&gt;Failed&lt;/b&gt;&lt;/td&gt;&lt;td&gt;&lt;b&gt;Skipped&lt;/b&gt;&lt;/td&gt;&lt;/tr&gt;
+&lt;tr&gt;&lt;td&gt;${TEST_COUNTS,var="total"}&lt;/td&gt;&lt;td style="color:#047857"&gt;&lt;b&gt;${TEST_COUNTS,var="pass"}&lt;/b&gt;&lt;/td&gt;&lt;td style="color:#b91c1c"&gt;&lt;b&gt;${TEST_COUNTS,var="fail"}&lt;/b&gt;&lt;/td&gt;&lt;td&gt;${TEST_COUNTS,var="skip"}&lt;/td&gt;&lt;/tr&gt;
+&lt;/table&gt;
+&lt;p style="margin:8px 0 0"&gt;&lt;b&gt;Failed tests:&lt;/b&gt;&lt;/p&gt;
+&lt;pre style="background:#f9fafb;padding:8px;margin:4px 0"&gt;${FAILED_TESTS, showStack=false, maxTests=20}&lt;/pre&gt;
+
+&lt;h3 style="margin:16px 0 4px"&gt;Security &amp;amp; quality gates (from the build log)&lt;/h3&gt;
+&lt;pre style="background:#f9fafb;padding:8px;margin:4px 0;font-size:12px"&gt;${BUILD_LOG_REGEX, regex="^(==================== [0-9]+[.].*|.*(passed|failed|error).* in [0-9.]+s.*|Quality gates passed|QUALITY GATE FAILED.*|No known vulnerabilities found|Found [0-9]+ known vulnerabilit.*|Total: [0-9]+ .*|.*scan skipped.*|Promoted .*)$", showTruncatedLines=false, maxMatches=60, escapeHtml=true}&lt;/pre&gt;
+
+&lt;h3 style="margin:16px 0 4px"&gt;Overall result: $BUILD_STATUS&lt;/h3&gt;
+&lt;p style="margin:0"&gt;SUCCESS = every gate passed and the image was promoted to &lt;code&gt;secure-ai-gate:stable&lt;/code&gt;.&lt;br&gt;
+UNSTABLE = passed with warnings (pip-audit / Trivy / ZAP).&lt;br&gt;
+FAILURE = a security or quality gate failed - the image was &lt;b&gt;not&lt;/b&gt; promoted.&lt;/p&gt;
+&lt;p style="margin:12px 0 0"&gt;Console output: &lt;a href="${BUILD_URL}console"&gt;${BUILD_URL}console&lt;/a&gt;&lt;br&gt;
+Test report: &lt;a href="${BUILD_URL}testReport/"&gt;${BUILD_URL}testReport/&lt;/a&gt;&lt;br&gt;
+Website (staging): &lt;a href="http://localhost:5050"&gt;http://localhost:5050&lt;/a&gt;&lt;/p&gt;
+&lt;/div&gt;</defaultContent>
+      <attachmentsPattern></attachmentsPattern>
+      <presendScript>$DEFAULT_PRESEND_SCRIPT</presendScript>
+      <postsendScript>$DEFAULT_POSTSEND_SCRIPT</postsendScript>
+      <attachBuildLog>false</attachBuildLog>
+      <compressBuildLog>false</compressBuildLog>
+      <replyTo>$DEFAULT_REPLYTO</replyTo>
+      <from></from>
+      <saveOutput>false</saveOutput>
+      <disabled>false</disabled>
+    </hudson.plugins.emailext.ExtendedEmailPublisher>
   </publishers>
   <buildWrappers>
     <org.jenkinsci.plugins.credentialsbinding.impl.SecretBuildWrapper plugin="credentials-binding">

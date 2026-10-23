@@ -129,7 +129,11 @@ docker compose -f jenkins/docker-compose.yml up -d --build    # Jenkins on http:
    pytest, Docker build, Trivy, deploy to staging, Selenium, OWASP ZAP, promote). The exact commands are in
    [`jenkins/freestyle-job.xml`](jenkins/freestyle-job.xml); pip-audit, Trivy and ZAP use *Advanced → Exit code to set
    build unstable* = `99`.
-8. **Post-build Actions**: *Publish JUnit test result report* (`reports/junit-*.xml`) and *Archive the artifacts* (`reports/**`).
+8. **Post-build Actions**: *Publish JUnit test result report* (`reports/junit-*.xml`), *Archive the artifacts*
+   (`reports/**`) and *Editable Email Notification* (trigger **Always**, recipients **Developers, Culprits,
+   Requester**, HTML body with the pushed changes, `${TEST_COUNTS}`, `${FAILED_TESTS}` and the gate lines from the log).
+9. **Manage Jenkins → System → Extended E-mail Notification**: SMTP server (`mailpit:1025` for the local test inbox
+   at http://localhost:8025, or `smtp.gmail.com:465` + SSL + Gmail app password).
 
 ## Limitations (honest)
 
